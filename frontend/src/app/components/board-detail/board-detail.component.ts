@@ -24,7 +24,7 @@ import {
   ActivityWithUser,
   Priority,
 } from "../../models";
-import { finalize, Subject, takeUntil } from "rxjs";
+import { finalize, forkJoin, Subject, takeUntil } from "rxjs";
 
 interface ColumnWithCards extends Column {
   cards: Card[];
@@ -1255,11 +1255,30 @@ export class BoardDetailComponent implements OnInit, OnDestroy {
   }
 
   loadCards(): void {
-    for (const column of this.columns) {
-      column.cards = [];
+    if (this.columns.length === 0) {
+      this.loading = false;
+      return;
     }
 
-    this.loading = false;
+    const cardRequests = this.columns.map((column) =>
+      this.apiService.getCards(column.id),
+    );
+
+    forkJoin(cardRequests).subscribe({
+      next: (allCards) => {
+        allCards.forEach((cards, index) => {
+          if (this.columns[index]) {
+            this.columns[index].cards = cards;
+          }
+        });
+      },
+      error: () => {
+        this.loading = false;
+      },
+      complete: () => {
+        this.loading = false;
+      },
+    });
   }
 
   loadActivities(): void {

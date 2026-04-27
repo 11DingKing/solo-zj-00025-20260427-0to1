@@ -91,6 +91,7 @@ fn protected_routes(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .route("/columns/:id", delete(handlers::columns::delete_column))
         .route("/columns/:id/reorder", put(handlers::columns::reorder_column))
         // 卡片相关
+        .route("/columns/:column_id/cards", get(handlers::cards::list_cards))
         .route("/columns/:column_id/cards", post(handlers::cards::create_card))
         .route("/cards/:id", get(handlers::cards::get_card))
         .route("/cards/:id", put(handlers::cards::update_card))

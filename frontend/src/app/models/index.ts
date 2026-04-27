@@ -184,3 +184,19 @@ export interface InviteMemberRequest {
 export interface UpdateMemberRoleRequest {
   role: BoardRole;
 }
+
+export interface CreateChecklistRequest {
+  title: string;
+}
+
+export interface UpdateChecklistRequest {
+  title?: string;
+}
+
+export interface CreateChecklistItemRequest {
+  content: string;
+}
+
+export interface UpdateChecklistItemRequest {
+  content?: string;
+}

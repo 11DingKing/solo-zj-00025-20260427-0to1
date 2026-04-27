@@ -135,6 +135,13 @@ export class ApiService {
   }
 
   // Cards
+  getCards(columnId: string): Observable<Card[]> {
+    return this.http.get<Card[]>(
+      `${this.apiUrl}/columns/${columnId}/cards`,
+      this.getHeaders(),
+    );
+  }
+
   createCard(columnId: string, request: CreateCardRequest): Observable<Card> {
     return this.http.post<Card>(
       `${this.apiUrl}/columns/${columnId}/cards`,

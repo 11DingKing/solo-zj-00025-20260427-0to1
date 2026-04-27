@@ -19,6 +19,38 @@ fn cards_cache_key(column_id: Uuid) -> String {
     format!("column:{}:cards", column_id)
 }
 
+pub async fn list_cards(
+    State(state): State<Arc<AppState>>,
+    current_user: CurrentUser,
+    Path(column_id): Path<Uuid>,
+) -> AppResult<Json<Vec<Card>>> {
+    let board_id = get_column_board_id(&state, column_id).await?;
+    verify_board_access(&state, current_user.user.id, board_id).await?;
+
+    let cache = CacheService::new(state.redis.clone());
+    let cache_key = cards_cache_key(column_id);
+
+    if let Some(cached) = cache.get::<Vec<Card>>(&cache_key).await? {
+        return Ok(Json(cached));
+    }
+
+    let cards = sqlx::query_as::<_, Card>(
+        r#"
+        SELECT id, column_id, title, description, position, priority, due_date, assignee_id, created_at, updated_at 
+        FROM cards 
+        WHERE column_id = $1 
+        ORDER BY position
+        "#,
+    )
+    .bind(column_id)
+    .fetch_all(&state.db)
+    .await?;
+
+    cache.set(&cache_key, &cards, 300).await?;
+
+    Ok(Json(cards))
+}
+
 async fn get_column_board_id(state: &Arc<AppState>, column_id: Uuid) -> AppResult<Uuid> {
     let result = sqlx::query!(
         r#"SELECT board_id FROM columns WHERE id = $1"#,
