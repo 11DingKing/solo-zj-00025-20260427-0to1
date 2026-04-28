@@ -1,5 +1,5 @@
 # 构建阶段
-FROM --platform=$BUILDPLATFORM rust:1.75-alpine as builder
+FROM --platform=$BUILDPLATFORM rust:1.85-alpine as builder
 
 WORKDIR /app
 
