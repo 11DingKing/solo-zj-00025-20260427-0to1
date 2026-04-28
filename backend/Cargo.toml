@@ -14,7 +14,7 @@ tower-service = "0.3"
 
 # 数据库
 sqlx = { version = "0.7", features = ["runtime-tokio", "postgres", "uuid", "chrono", "json"] }
-refinery = { version = "0.8", features = ["tokio", "sqlx"] }
+refinery = { version = "0.8", features = ["tokio-postgres"] }
 
 # Redis
 redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
