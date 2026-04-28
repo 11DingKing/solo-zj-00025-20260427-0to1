@@ -480,7 +480,6 @@ pub struct Activity {
 
 #[derive(Debug, Serialize)]
 pub struct ActivityWithUser {
-    #[serde(flatten)]
     pub activity: Activity,
     pub user: UserResponse,
 }

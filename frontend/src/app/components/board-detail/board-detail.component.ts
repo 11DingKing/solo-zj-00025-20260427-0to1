@@ -6,7 +6,7 @@ import {
   ReactiveFormsModule,
   Validators,
 } from "@angular/forms";
-import { ActivatedRoute, Router } from "@angular/router";
+import { ActivatedRoute, Router, RouterLink } from "@angular/router";
 import {
   CdkDragDrop,
   CdkDropList,
@@ -15,6 +15,7 @@ import {
   transferArrayItem,
 } from "@angular/cdk/drag-drop";
 import { ApiService } from "../../services/api.service";
+import { ToastService } from "../../services/toast.service";
 import {
   Board,
   Column,
@@ -33,12 +34,18 @@ interface ColumnWithCards extends Column {
 @Component({
   selector: "app-board-detail",
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, CdkDropList, CdkDrag],
+  imports: [
+    CommonModule,
+    ReactiveFormsModule,
+    CdkDropList,
+    CdkDrag,
+    RouterLink,
+  ],
   template: `
     <div class="board-detail-container">
       <div class="board-header" *ngIf="board">
         <div class="header-left">
-          <button class="btn btn-sm btn-secondary" routerLink="/boards">
+          <button class="btn btn-sm btn-secondary" (click)="goBack()">
             <svg
               width="16"
               height="16"
@@ -278,17 +285,30 @@ interface ColumnWithCards extends Column {
               <div *ngIf="activities.length === 0" class="empty-activities">
                 暂无活动记录
               </div>
-              <div *ngFor="let activity of activities" class="activity-item">
+              <div
+                *ngFor="
+                  let activityWithUser of activities;
+                  trackBy: trackByActivity
+                "
+                class="activity-item"
+              >
                 <div class="activity-avatar">
-                  {{ activity.user.username.charAt(0).toUpperCase() }}
+                  {{
+                    activityWithUser.user?.username?.charAt(0)?.toUpperCase() ||
+                      "U"
+                  }}
                 </div>
                 <div class="activity-content">
                   <p class="activity-text">
-                    <strong>{{ activity.user.username }}</strong>
-                    {{ formatActivity(activity) }}
+                    <strong>{{
+                      activityWithUser.user?.username || "未知用户"
+                    }}</strong>
+                    {{ formatActivity(activityWithUser) }}
                   </p>
                   <p class="activity-time">
-                    {{ formatRelativeTime(activity.activity.created_at) }}
+                    {{
+                      formatRelativeTime(activityWithUser.activity?.created_at)
+                    }}
                   </p>
                 </div>
               </div>
@@ -1189,6 +1209,7 @@ export class BoardDetailComponent implements OnInit, OnDestroy {
     private router: Router,
     private apiService: ApiService,
     private fb: FormBuilder,
+    private toastService: ToastService,
   ) {
     this.columnForm = this.fb.group({
       name: ["", [Validators.required, Validators.maxLength(50)]],
@@ -1219,6 +1240,10 @@ export class BoardDetailComponent implements OnInit, OnDestroy {
     this.destroy$.complete();
   }
 
+  goBack(): void {
+    this.router.navigate(["/boards"]);
+  }
+
   get connectedLists(): string[] {
     return this.columns.map((c) => c.id);
   }
@@ -1230,12 +1255,19 @@ export class BoardDetailComponent implements OnInit, OnDestroy {
       next: (board) => {
         this.board = board;
       },
+      error: () => {
+        this.toastService.error("加载看板信息失败");
+      },
     });
 
     this.apiService.getColumns(this.boardId).subscribe({
       next: (columns) => {
         this.columns = columns.map((col) => ({ ...col, cards: [] }));
         this.loadCards();
+      },
+      error: () => {
+        this.toastService.error("加载列列表失败");
+        this.loading = false;
       },
     });
 
@@ -1274,6 +1306,7 @@ export class BoardDetailComponent implements OnInit, OnDestroy {
       },
       error: () => {
         this.loading = false;
+        this.toastService.error("加载卡片失败");
       },
       complete: () => {
         this.loading = false;
@@ -1285,6 +1318,9 @@ export class BoardDetailComponent implements OnInit, OnDestroy {
     this.apiService.getActivities(this.boardId, 50).subscribe({
       next: (activities) => {
         this.activities = activities;
+      },
+      error: () => {
+        this.toastService.error("加载活动日志失败");
       },
     });
   }
@@ -1369,6 +1405,10 @@ export class BoardDetailComponent implements OnInit, OnDestroy {
           next: () => {
             this.closeColumnModal();
             this.loadBoardData();
+            this.toastService.success("列更新成功");
+          },
+          error: () => {
+            this.toastService.error("更新列失败");
           },
         });
     } else {
@@ -1379,6 +1419,10 @@ export class BoardDetailComponent implements OnInit, OnDestroy {
           next: () => {
             this.closeColumnModal();
             this.loadBoardData();
+            this.toastService.success("列创建成功");
+          },
+          error: () => {
+            this.toastService.error("创建列失败");
           },
         });
     }
@@ -1407,6 +1451,10 @@ export class BoardDetailComponent implements OnInit, OnDestroy {
           next: () => {
             this.closeCardModal();
             this.loadActivities();
+            this.toastService.success("卡片更新成功");
+          },
+          error: () => {
+            this.toastService.error("更新卡片失败");
           },
         });
     } else {
@@ -1426,6 +1474,10 @@ export class BoardDetailComponent implements OnInit, OnDestroy {
             }
             this.closeCardModal();
             this.loadActivities();
+            this.toastService.success("卡片创建成功");
+          },
+          error: () => {
+            this.toastService.error("创建卡片失败");
           },
         });
     }
@@ -1440,6 +1492,10 @@ export class BoardDetailComponent implements OnInit, OnDestroy {
       next: () => {
         this.closeCardModal();
         this.loadActivities();
+        this.toastService.success("卡片删除成功");
+      },
+      error: () => {
+        this.toastService.error("删除卡片失败");
       },
     });
   }
@@ -1462,6 +1518,20 @@ export class BoardDetailComponent implements OnInit, OnDestroy {
               this.members = members;
             },
           });
+          this.toastService.success("邀请发送成功");
+        },
+        error: (err: any) => {
+          let errorMessage = "邀请失败";
+          if (err.error?.message) {
+            errorMessage = err.error.message;
+          } else if (err.status === 404) {
+            errorMessage = "用户不存在，请检查邮箱是否正确";
+          } else if (err.status === 409) {
+            errorMessage = "该用户已经是看板成员";
+          } else if (err.status === 403) {
+            errorMessage = "您没有权限邀请成员";
+          }
+          this.toastService.error(errorMessage);
         },
       });
   }
@@ -1481,7 +1551,11 @@ export class BoardDetailComponent implements OnInit, OnDestroy {
 
     this.apiService
       .reorderColumn(draggedColumn.id, { after_column_id: afterColumnId })
-      .subscribe();
+      .subscribe({
+        error: () => {
+          this.toastService.error("重新排序失败");
+        },
+      });
   }
 
   dropCard(event: CdkDragDrop<Card[]>): void {
@@ -1506,7 +1580,11 @@ export class BoardDetailComponent implements OnInit, OnDestroy {
           target_column_id: prevColumnId,
           after_card_id: afterCardId,
         })
-        .subscribe();
+        .subscribe({
+          error: () => {
+            this.toastService.error("移动卡片失败");
+          },
+        });
     } else {
       transferArrayItem(
         event.previousContainer.data,
@@ -1524,7 +1602,11 @@ export class BoardDetailComponent implements OnInit, OnDestroy {
           target_column_id: event.container.id,
           after_card_id: afterCardId,
         })
-        .subscribe();
+        .subscribe({
+          error: () => {
+            this.toastService.error("移动卡片失败");
+          },
+        });
     }
 
     this.loadActivities();
@@ -1536,6 +1618,10 @@ export class BoardDetailComponent implements OnInit, OnDestroy {
 
   trackByCard(index: number, card: Card): string {
     return card.id;
+  }
+
+  trackByActivity(index: number, activity: ActivityWithUser): string {
+    return activity.activity?.id || String(index);
   }
 
   getPriorityClass(priority: Priority): string {
@@ -1565,6 +1651,9 @@ export class BoardDetailComponent implements OnInit, OnDestroy {
   }
 
   formatRelativeTime(dateString: string): string {
+    if (!dateString) {
+      return "未知时间";
+    }
     const date = new Date(dateString);
     const now = new Date();
     const diff = now.getTime() - date.getTime();
@@ -1586,6 +1675,10 @@ export class BoardDetailComponent implements OnInit, OnDestroy {
   }
 
   formatActivity(activityWithUser: ActivityWithUser): string {
+    if (!activityWithUser || !activityWithUser.activity) {
+      return "进行了操作";
+    }
+
     const { activity } = activityWithUser;
 
     const actionMap: Record<string, string> = {
