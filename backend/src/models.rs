@@ -105,12 +105,6 @@ pub struct BoardIdPositionRow {
 }
 
 #[derive(Debug, sqlx::FromRow)]
-pub struct BoardIdNameRow {
-    pub board_id: Uuid,
-    pub name: String,
-}
-
-#[derive(Debug, sqlx::FromRow)]
 pub struct ColumnIdTitleRow {
     pub column_id: Uuid,
     pub title: String,

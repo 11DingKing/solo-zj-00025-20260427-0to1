@@ -125,15 +125,21 @@ END;
 $$ language 'plpgsql';
 
 -- 为需要的表添加更新时间触发器
+DROP TRIGGER IF EXISTS update_users_updated_at ON users;
 CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS update_boards_updated_at ON boards;
 CREATE TRIGGER update_boards_updated_at BEFORE UPDATE ON boards
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS update_columns_updated_at ON columns;
 CREATE TRIGGER update_columns_updated_at BEFORE UPDATE ON columns
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS update_cards_updated_at ON cards;
 CREATE TRIGGER update_cards_updated_at BEFORE UPDATE ON cards
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS update_checklists_updated_at ON checklists;
 CREATE TRIGGER update_checklists_updated_at BEFORE UPDATE ON checklists
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS update_checklist_items_updated_at ON checklist_items;
 CREATE TRIGGER update_checklist_items_updated_at BEFORE UPDATE ON checklist_items
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();

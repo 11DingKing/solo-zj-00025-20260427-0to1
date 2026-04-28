@@ -1,7 +1,6 @@
 use crate::config::Config;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
-use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -20,9 +19,9 @@ pub async fn create_pool(database_url: &str) -> anyhow::Result<PgPool> {
 }
 
 pub async fn run_migrations(pool: &PgPool) -> anyhow::Result<()> {
-    sqlx::migrate!("./migrations")
-        .run(pool)
-        .await?;
-    
+    // Migrations are handled by PostgreSQL init scripts via docker-entrypoint-initdb.d
+    // Just verify the connection works
+    sqlx::query("SELECT 1").execute(pool).await?;
+    tracing::info!("Database connection verified");
     Ok(())
 }

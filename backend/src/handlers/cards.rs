@@ -6,7 +6,7 @@ use crate::middleware::auth::CurrentUser;
 use crate::models::{
     BoardIdRow, Card, CardWithDetails, Checklist, ChecklistItem, ChecklistWithItems,
     ColumnIdTitleRow, CreateCardRequest, EntityType, MaxPositionRow, MoveCardRequest, NameRow,
-    Priority, Tag, UpdateCardRequest, UserIdUsernameEmailRow, UserResponse,
+    PositionRow, Priority, Tag, UpdateCardRequest, UserIdUsernameEmailRow, UserResponse,
 };
 use axum::{
     extract::{Path, State},
@@ -261,7 +261,7 @@ pub async fn update_card(
     .fetch_one(&state.db)
     .await?;
 
-    let priority = req.priority.as_ref().map(|p| Priority::from_str(p).as_str());
+    let priority = req.priority.as_ref().map(|p| Priority::from_str(p).as_str().to_string());
 
     let card = sqlx::query_as::<_, Card>(
         r#"
@@ -278,7 +278,7 @@ pub async fn update_card(
     )
     .bind(&req.title)
     .bind(&req.description)
-    .bind(priority)
+    .bind(priority.as_deref())
     .bind(req.due_date)
     .bind(req.assignee_id)
     .bind(card_id)
