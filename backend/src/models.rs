@@ -3,6 +3,119 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use validator::Validate;
 
+#[derive(Debug, sqlx::FromRow)]
+pub struct IdRow {
+    pub id: Uuid,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct BoardIdRow {
+    pub board_id: Uuid,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct BoardIdNameRow {
+    pub board_id: Uuid,
+    pub name: String,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct TitleRow {
+    pub title: String,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct NameRow {
+    pub name: String,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct IdNameBoardIdRow {
+    pub id: Uuid,
+    pub name: String,
+    pub board_id: Uuid,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct CardIdTitleRow {
+    pub card_id: Uuid,
+    pub title: String,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct ChecklistCardIdTitleRow {
+    pub card_id: Uuid,
+    pub title: String,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct ChecklistItemStateRow {
+    pub is_completed: bool,
+    pub checklist_id: Uuid,
+    pub content: String,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct MaxPositionRow {
+    pub max_pos: Option<f64>,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct ExistsRow {
+    pub exists: i32,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct OwnerIdRow {
+    pub owner_id: Uuid,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct RoleRow {
+    pub role: String,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct UsernameEmailRow {
+    pub username: String,
+    pub email: String,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct UserIdUsernameEmailRow {
+    pub id: Uuid,
+    pub username: String,
+    pub email: String,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct UsernameRow {
+    pub username: String,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct PositionRow {
+    pub position: f64,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct BoardIdPositionRow {
+    pub board_id: Uuid,
+    pub position: f64,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct BoardIdNameRow {
+    pub board_id: Uuid,
+    pub name: String,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct ColumnIdTitleRow {
+    pub column_id: Uuid,
+    pub title: String,
+}
+
 // 用户相关
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct User {
@@ -273,7 +386,6 @@ pub struct Tag {
 pub struct CreateTagRequest {
     #[validate(length(min = 1, max = 30))]
     pub name: String,
-    #[validate(regex = "^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$")]
     pub color: String,
 }
 
@@ -281,7 +393,6 @@ pub struct CreateTagRequest {
 pub struct UpdateTagRequest {
     #[validate(length(min = 1, max = 30))]
     pub name: Option<String>,
-    #[validate(regex = "^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$")]
     pub color: Option<String>,
 }
 

@@ -3,7 +3,10 @@ use crate::db::AppState;
 use crate::errors::{AppError, AppResult};
 use crate::handlers::boards::{verify_board_access, verify_board_permission};
 use crate::middleware::auth::CurrentUser;
-use crate::models::{Column, CreateColumnRequest, EntityType, ReorderColumnRequest, UpdateColumnRequest};
+use crate::models::{
+    BoardIdNameRow, BoardIdPositionRow, BoardIdRow, Column, CreateColumnRequest, EntityType,
+    MaxPositionRow, PositionRow, ReorderColumnRequest, UpdateColumnRequest,
+};
 use axum::{
     extract::{Path, State},
     Json,
@@ -57,11 +60,11 @@ pub async fn create_column(
     verify_board_permission(&state, current_user.user.id, board_id, |r| r.can_edit_board()).await?;
 
     let position = if let Some(after_column_id) = req.after_column_id {
-        let after_column = sqlx::query!(
+        let after_column = sqlx::query_as::<_, PositionRow>(
             r#"SELECT position FROM columns WHERE id = $1 AND board_id = $2"#,
-            after_column_id,
-            board_id
         )
+        .bind(after_column_id)
+        .bind(board_id)
         .fetch_optional(&state.db)
         .await?;
 
@@ -70,10 +73,10 @@ pub async fn create_column(
             None => 65536.0,
         }
     } else {
-        let max_position = sqlx::query!(
+        let max_position = sqlx::query_as::<_, MaxPositionRow>(
             r#"SELECT MAX(position) as max_pos FROM columns WHERE board_id = $1"#,
-            board_id
         )
+        .bind(board_id)
         .fetch_one(&state.db)
         .await?;
 
@@ -93,18 +96,18 @@ pub async fn create_column(
     .fetch_one(&state.db)
     .await?;
 
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO activities (board_id, user_id, action, entity_type, entity_id, details)
         VALUES ($1, $2, $3, $4, $5, $6)
         "#,
-        board_id,
-        current_user.user.id,
-        "created",
-        EntityType::Column.as_str(),
-        column.id,
-        serde_json::json!({ "name": column.name })
     )
+    .bind(board_id)
+    .bind(current_user.user.id)
+    .bind("created")
+    .bind(EntityType::Column.as_str())
+    .bind(column.id)
+    .bind(serde_json::json!({ "name": column.name }))
     .execute(&state.db)
     .await?;
 
@@ -122,10 +125,10 @@ pub async fn update_column(
 ) -> AppResult<Json<Column>> {
     req.validate()?;
 
-    let column = sqlx::query!(
+    let column = sqlx::query_as::<_, BoardIdRow>(
         r#"SELECT board_id FROM columns WHERE id = $1"#,
-        column_id
     )
+    .bind(column_id)
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| AppError::NotFound("Column not found".to_string()))?;
@@ -148,18 +151,18 @@ pub async fn update_column(
     .fetch_one(&state.db)
     .await?;
 
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO activities (board_id, user_id, action, entity_type, entity_id, details)
         VALUES ($1, $2, $3, $4, $5, $6)
         "#,
-        column.board_id,
-        current_user.user.id,
-        "updated",
-        EntityType::Column.as_str(),
-        column.id,
-        serde_json::json!({ "name": req.name, "color": req.color })
     )
+    .bind(column.board_id)
+    .bind(current_user.user.id)
+    .bind("updated")
+    .bind(EntityType::Column.as_str())
+    .bind(column.id)
+    .bind(serde_json::json!({ "name": req.name, "color": req.color }))
     .execute(&state.db)
     .await?;
 
@@ -174,32 +177,33 @@ pub async fn delete_column(
     current_user: CurrentUser,
     Path(column_id): Path<Uuid>,
 ) -> AppResult<Json<serde_json::Value>> {
-    let column = sqlx::query!(
+    let column = sqlx::query_as::<_, BoardIdNameRow>(
         r#"SELECT board_id, name FROM columns WHERE id = $1"#,
-        column_id
     )
+    .bind(column_id)
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| AppError::NotFound("Column not found".to_string()))?;
 
     verify_board_permission(&state, current_user.user.id, column.board_id, |r| r.can_edit_board()).await?;
 
-    sqlx::query!(r#"DELETE FROM columns WHERE id = $1"#, column_id)
+    sqlx::query(r#"DELETE FROM columns WHERE id = $1"#)
+        .bind(column_id)
         .execute(&state.db)
         .await?;
 
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO activities (board_id, user_id, action, entity_type, entity_id, details)
         VALUES ($1, $2, $3, $4, $5, $6)
         "#,
-        column.board_id,
-        current_user.user.id,
-        "deleted",
-        EntityType::Column.as_str(),
-        column_id,
-        serde_json::json!({ "name": column.name })
     )
+    .bind(column.board_id)
+    .bind(current_user.user.id)
+    .bind("deleted")
+    .bind(EntityType::Column.as_str())
+    .bind(column_id)
+    .bind(serde_json::json!({ "name": column.name }))
     .execute(&state.db)
     .await?;
 
@@ -215,10 +219,10 @@ pub async fn reorder_column(
     Path(column_id): Path<Uuid>,
     Json(req): Json<ReorderColumnRequest>,
 ) -> AppResult<Json<Column>> {
-    let column = sqlx::query!(
+    let column = sqlx::query_as::<_, BoardIdPositionRow>(
         r#"SELECT board_id, position FROM columns WHERE id = $1"#,
-        column_id
     )
+    .bind(column_id)
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| AppError::NotFound("Column not found".to_string()))?;
@@ -230,26 +234,26 @@ pub async fn reorder_column(
             return Err(AppError::BadRequest("Cannot reorder after itself".to_string()));
         }
 
-        let after_column = sqlx::query!(
+        let after_column = sqlx::query_as::<_, PositionRow>(
             r#"SELECT position FROM columns WHERE id = $1 AND board_id = $2"#,
-            after_column_id,
-            column.board_id
         )
+        .bind(after_column_id)
+        .bind(column.board_id)
         .fetch_optional(&state.db)
         .await?
         .ok_or_else(|| AppError::NotFound("Reference column not found".to_string()))?;
 
-        let next_column = sqlx::query!(
+        let next_column = sqlx::query_as::<_, PositionRow>(
             r#"
             SELECT position FROM columns 
             WHERE board_id = $1 AND position > $2 AND id != $3
             ORDER BY position ASC
             LIMIT 1
             "#,
-            column.board_id,
-            after_column.position,
-            column_id
         )
+        .bind(column.board_id)
+        .bind(after_column.position)
+        .bind(column_id)
         .fetch_optional(&state.db)
         .await?;
 
@@ -258,16 +262,16 @@ pub async fn reorder_column(
             None => after_column.position + 65536.0,
         }
     } else {
-        let first_column = sqlx::query!(
+        let first_column = sqlx::query_as::<_, PositionRow>(
             r#"
             SELECT position FROM columns 
             WHERE board_id = $1 AND id != $2
             ORDER BY position ASC
             LIMIT 1
             "#,
-            column.board_id,
-            column_id
         )
+        .bind(column.board_id)
+        .bind(column_id)
         .fetch_optional(&state.db)
         .await?;
 

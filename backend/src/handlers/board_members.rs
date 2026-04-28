@@ -4,8 +4,8 @@ use crate::errors::{AppError, AppResult};
 use crate::handlers::boards::{verify_board_access, verify_board_permission};
 use crate::middleware::auth::CurrentUser;
 use crate::models::{
-    BoardMember, BoardMemberWithUser, BoardRole, EntityType, InviteMemberRequest,
-    UpdateMemberRoleRequest, UserResponse,
+    BoardMember, BoardMemberWithUser, BoardRole, EntityType, IdRow, InviteMemberRequest,
+    UpdateMemberRoleRequest, UserIdUsernameEmailRow, UsernameEmailRow, UsernameRow,
 };
 use axum::{
     extract::{Path, State},
@@ -48,10 +48,10 @@ pub async fn invite_member(
 ) -> AppResult<Json<BoardMemberWithUser>> {
     verify_board_permission(&state, current_user.user.id, board_id, |r| r.can_manage_members()).await?;
 
-    let user = sqlx::query!(
+    let user = sqlx::query_as::<_, UserIdUsernameEmailRow>(
         r#"SELECT id, username, email FROM users WHERE email = $1"#,
-        req.email
     )
+    .bind(&req.email)
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
@@ -65,11 +65,11 @@ pub async fn invite_member(
         return Err(AppError::BadRequest("Cannot assign owner role".to_string()));
     }
 
-    let existing = sqlx::query!(
+    let existing = sqlx::query_as::<_, IdRow>(
         r#"SELECT id FROM board_members WHERE board_id = $1 AND user_id = $2"#,
-        board_id,
-        user.id
     )
+    .bind(board_id)
+    .bind(user.id)
     .fetch_optional(&state.db)
     .await?;
 
@@ -92,18 +92,18 @@ pub async fn invite_member(
     .fetch_one(&mut *tx)
     .await?;
 
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO activities (board_id, user_id, action, entity_type, entity_id, details)
         VALUES ($1, $2, $3, $4, $5, $6)
         "#,
-        board_id,
-        current_user.user.id,
-        "invited",
-        EntityType::Member.as_str(),
-        user.id,
-        serde_json::json!({ "username": user.username, "role": role.as_str() })
     )
+    .bind(board_id)
+    .bind(current_user.user.id)
+    .bind("invited")
+    .bind(EntityType::Member.as_str())
+    .bind(user.id)
+    .bind(serde_json::json!({ "username": user.username, "role": role.as_str() }))
     .execute(&mut *tx)
     .await?;
 
@@ -152,25 +152,25 @@ pub async fn update_member_role(
     .await?
     .ok_or_else(|| AppError::NotFound("Member not found".to_string()))?;
 
-    let user = sqlx::query!(
+    let user = sqlx::query_as::<_, UsernameEmailRow>(
         r#"SELECT username, email FROM users WHERE id = $1"#,
-        target_user_id
     )
+    .bind(target_user_id)
     .fetch_one(&state.db)
     .await?;
 
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO activities (board_id, user_id, action, entity_type, entity_id, details)
         VALUES ($1, $2, $3, $4, $5, $6)
         "#,
-        board_id,
-        current_user.user.id,
-        "role_changed",
-        EntityType::Member.as_str(),
-        target_user_id,
-        serde_json::json!({ "username": user.username, "new_role": new_role.as_str() })
     )
+    .bind(board_id)
+    .bind(current_user.user.id)
+    .bind("role_changed")
+    .bind(EntityType::Member.as_str())
+    .bind(target_user_id)
+    .bind(serde_json::json!({ "username": user.username, "new_role": new_role.as_str() }))
     .execute(&state.db)
     .await?;
 
@@ -196,18 +196,18 @@ pub async fn remove_member(
         return Err(AppError::BadRequest("Cannot remove yourself".to_string()));
     }
 
-    let user = sqlx::query!(
+    let user = sqlx::query_as::<_, UsernameRow>(
         r#"SELECT username FROM users WHERE id = $1"#,
-        target_user_id
     )
+    .bind(target_user_id)
     .fetch_optional(&state.db)
     .await?;
 
-    let result = sqlx::query!(
+    let result = sqlx::query(
         r#"DELETE FROM board_members WHERE board_id = $1 AND user_id = $2"#,
-        board_id,
-        target_user_id
     )
+    .bind(board_id)
+    .bind(target_user_id)
     .execute(&state.db)
     .await?;
 
@@ -215,18 +215,18 @@ pub async fn remove_member(
         return Err(AppError::NotFound("Member not found".to_string()));
     }
 
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO activities (board_id, user_id, action, entity_type, entity_id, details)
         VALUES ($1, $2, $3, $4, $5, $6)
         "#,
-        board_id,
-        current_user.user.id,
-        "removed",
-        EntityType::Member.as_str(),
-        target_user_id,
-        serde_json::json!({ "username": user.map(|u| u.username) })
     )
+    .bind(board_id)
+    .bind(current_user.user.id)
+    .bind("removed")
+    .bind(EntityType::Member.as_str())
+    .bind(target_user_id)
+    .bind(serde_json::json!({ "username": user.map(|u| u.username) }))
     .execute(&state.db)
     .await?;
 

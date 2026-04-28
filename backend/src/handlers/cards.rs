@@ -4,8 +4,9 @@ use crate::errors::{AppError, AppResult};
 use crate::handlers::boards::{verify_board_access, verify_board_permission};
 use crate::middleware::auth::CurrentUser;
 use crate::models::{
-    Card, CardWithDetails, Checklist, ChecklistItem, ChecklistWithItems, CreateCardRequest,
-    EntityType, MoveCardRequest, Priority, Tag, UpdateCardRequest, UserResponse,
+    BoardIdRow, Card, CardWithDetails, Checklist, ChecklistItem, ChecklistWithItems,
+    ColumnIdTitleRow, CreateCardRequest, EntityType, MaxPositionRow, MoveCardRequest, NameRow,
+    Priority, Tag, UpdateCardRequest, UserIdUsernameEmailRow, UserResponse,
 };
 use axum::{
     extract::{Path, State},
@@ -52,10 +53,10 @@ pub async fn list_cards(
 }
 
 pub async fn get_column_board_id(state: &Arc<AppState>, column_id: Uuid) -> AppResult<Uuid> {
-    let result = sqlx::query!(
+    let result = sqlx::query_as::<_, BoardIdRow>(
         r#"SELECT board_id FROM columns WHERE id = $1"#,
-        column_id
     )
+    .bind(column_id)
     .fetch_optional(&state.db)
     .await?;
 
@@ -66,15 +67,15 @@ pub async fn get_column_board_id(state: &Arc<AppState>, column_id: Uuid) -> AppR
 }
 
 pub async fn get_card_board_id(state: &Arc<AppState>, card_id: Uuid) -> AppResult<Uuid> {
-    let result = sqlx::query!(
+    let result = sqlx::query_as::<_, BoardIdRow>(
         r#"
         SELECT c.board_id 
         FROM cards ca
         JOIN columns c ON ca.column_id = c.id
         WHERE ca.id = $1
         "#,
-        card_id
     )
+    .bind(card_id)
     .fetch_optional(&state.db)
     .await?;
 
@@ -96,11 +97,11 @@ pub async fn create_card(
     verify_board_permission(&state, current_user.user.id, board_id, |r| r.can_edit_cards()).await?;
 
     let position = if let Some(after_card_id) = req.after_card_id {
-        let after_card = sqlx::query!(
+        let after_card = sqlx::query_as::<_, PositionRow>(
             r#"SELECT position FROM cards WHERE id = $1 AND column_id = $2"#,
-            after_card_id,
-            column_id
         )
+        .bind(after_card_id)
+        .bind(column_id)
         .fetch_optional(&state.db)
         .await?;
 
@@ -109,10 +110,10 @@ pub async fn create_card(
             None => 65536.0,
         }
     } else {
-        let max_position = sqlx::query!(
+        let max_position = sqlx::query_as::<_, MaxPositionRow>(
             r#"SELECT MAX(position) as max_pos FROM cards WHERE column_id = $1"#,
-            column_id
         )
+        .bind(column_id)
         .fetch_one(&state.db)
         .await?;
 
@@ -133,18 +134,18 @@ pub async fn create_card(
     .fetch_one(&state.db)
     .await?;
 
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO activities (board_id, user_id, action, entity_type, entity_id, details)
         VALUES ($1, $2, $3, $4, $5, $6)
         "#,
-        board_id,
-        current_user.user.id,
-        "created",
-        EntityType::Card.as_str(),
-        card.id,
-        serde_json::json!({ "title": card.title })
     )
+    .bind(board_id)
+    .bind(current_user.user.id)
+    .bind("created")
+    .bind(EntityType::Card.as_str())
+    .bind(card.id)
+    .bind(serde_json::json!({ "title": card.title }))
     .execute(&state.db)
     .await?;
 
@@ -174,10 +175,10 @@ pub async fn get_card(
     .await?;
 
     let assignee = if let Some(assignee_id) = card.assignee_id {
-        sqlx::query!(
+        sqlx::query_as::<_, UserIdUsernameEmailRow>(
             r#"SELECT id, username, email FROM users WHERE id = $1"#,
-            assignee_id
         )
+        .bind(assignee_id)
         .fetch_optional(&state.db)
         .await?
         .map(|u| UserResponse {
@@ -304,18 +305,18 @@ pub async fn update_card(
     }
 
     if !changes.is_empty() {
-        sqlx::query!(
+        sqlx::query(
             r#"
             INSERT INTO activities (board_id, user_id, action, entity_type, entity_id, details)
             VALUES ($1, $2, $3, $4, $5, $6)
             "#,
-            board_id,
-            current_user.user.id,
-            "updated",
-            EntityType::Card.as_str(),
-            card.id,
-            serde_json::Value::Object(changes)
         )
+        .bind(board_id)
+        .bind(current_user.user.id)
+        .bind("updated")
+        .bind(EntityType::Card.as_str())
+        .bind(card.id)
+        .bind(serde_json::Value::Object(changes))
         .execute(&state.db)
         .await?;
     }
@@ -334,30 +335,31 @@ pub async fn delete_card(
     let board_id = get_card_board_id(&state, card_id).await?;
     verify_board_permission(&state, current_user.user.id, board_id, |r| r.can_edit_cards()).await?;
 
-    let card = sqlx::query!(
+    let card = sqlx::query_as::<_, ColumnIdTitleRow>(
         r#"SELECT column_id, title FROM cards WHERE id = $1"#,
-        card_id
     )
+    .bind(card_id)
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| AppError::NotFound("Card not found".to_string()))?;
 
-    sqlx::query!(r#"DELETE FROM cards WHERE id = $1"#, card_id)
+    sqlx::query(r#"DELETE FROM cards WHERE id = $1"#)
+        .bind(card_id)
         .execute(&state.db)
         .await?;
 
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO activities (board_id, user_id, action, entity_type, entity_id, details)
         VALUES ($1, $2, $3, $4, $5, $6)
         "#,
-        board_id,
-        current_user.user.id,
-        "deleted",
-        EntityType::Card.as_str(),
-        card_id,
-        serde_json::json!({ "title": card.title })
     )
+    .bind(board_id)
+    .bind(current_user.user.id)
+    .bind("deleted")
+    .bind(EntityType::Card.as_str())
+    .bind(card_id)
+    .bind(serde_json::json!({ "title": card.title }))
     .execute(&state.db)
     .await?;
 
@@ -393,11 +395,11 @@ pub async fn move_card(
     .await?;
 
     let position = if let Some(after_card_id) = req.after_card_id {
-        let after_card = sqlx::query!(
+        let after_card = sqlx::query_as::<_, PositionRow>(
             r#"SELECT position FROM cards WHERE id = $1 AND column_id = $2"#,
-            after_card_id,
-            req.target_column_id
         )
+        .bind(after_card_id)
+        .bind(req.target_column_id)
         .fetch_optional(&state.db)
         .await?;
 
@@ -406,10 +408,10 @@ pub async fn move_card(
             None => 65536.0,
         }
     } else {
-        let max_position = sqlx::query!(
+        let max_position = sqlx::query_as::<_, MaxPositionRow>(
             r#"SELECT MAX(position) as max_pos FROM cards WHERE column_id = $1"#,
-            req.target_column_id
         )
+        .bind(req.target_column_id)
         .fetch_one(&state.db)
         .await?;
 
@@ -434,17 +436,17 @@ pub async fn move_card(
     activity_details.insert("title".to_string(), serde_json::json!(card.title));
 
     if old_card.column_id != req.target_column_id {
-        let old_column = sqlx::query!(
+        let old_column = sqlx::query_as::<_, NameRow>(
             r#"SELECT name FROM columns WHERE id = $1"#,
-            old_card.column_id
         )
+        .bind(old_card.column_id)
         .fetch_optional(&state.db)
         .await?;
         
-        let new_column = sqlx::query!(
+        let new_column = sqlx::query_as::<_, NameRow>(
             r#"SELECT name FROM columns WHERE id = $1"#,
-            req.target_column_id
         )
+        .bind(req.target_column_id)
         .fetch_optional(&state.db)
         .await?;
 
@@ -458,18 +460,18 @@ pub async fn move_card(
         );
     }
 
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO activities (board_id, user_id, action, entity_type, entity_id, details)
         VALUES ($1, $2, $3, $4, $5, $6)
         "#,
-        board_id,
-        current_user.user.id,
-        "moved",
-        EntityType::Card.as_str(),
-        card.id,
-        serde_json::Value::Object(activity_details)
     )
+    .bind(board_id)
+    .bind(current_user.user.id)
+    .bind("moved")
+    .bind(EntityType::Card.as_str())
+    .bind(card.id)
+    .bind(serde_json::Value::Object(activity_details))
     .execute(&state.db)
     .await?;
 

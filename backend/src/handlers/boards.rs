@@ -3,7 +3,8 @@ use crate::db::AppState;
 use crate::errors::{AppError, AppResult};
 use crate::middleware::auth::CurrentUser;
 use crate::models::{
-    Activity, Board, BoardMember, BoardRole, CreateBoardRequest, EntityType, UpdateBoardRequest,
+    Activity, Board, BoardMember, BoardRole, CreateBoardRequest, EntityType, ExistsRow,
+    OwnerIdRow, RoleRow, UpdateBoardRequest,
 };
 use axum::{
     extract::{Path, Query, State},
@@ -99,30 +100,30 @@ pub async fn create_board(
     .fetch_one(&mut *tx)
     .await?;
 
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO board_members (board_id, user_id, role)
         VALUES ($1, $2, $3)
         "#,
-        board.id,
-        current_user.user.id,
-        BoardRole::Owner.as_str()
     )
+    .bind(board.id)
+    .bind(current_user.user.id)
+    .bind(BoardRole::Owner.as_str())
     .execute(&mut *tx)
     .await?;
 
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO activities (board_id, user_id, action, entity_type, entity_id, details)
         VALUES ($1, $2, $3, $4, $5, $6)
         "#,
-        board.id,
-        current_user.user.id,
-        "created",
-        EntityType::Board.as_str(),
-        board.id,
-        serde_json::json!({ "name": board.name })
     )
+    .bind(board.id)
+    .bind(current_user.user.id)
+    .bind("created")
+    .bind(EntityType::Board.as_str())
+    .bind(board.id)
+    .bind(serde_json::json!({ "name": board.name }))
     .execute(&mut *tx)
     .await?;
 
@@ -187,18 +188,18 @@ pub async fn update_board(
     .fetch_one(&state.db)
     .await?;
 
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO activities (board_id, user_id, action, entity_type, entity_id, details)
         VALUES ($1, $2, $3, $4, $5, $6)
         "#,
-        board_id,
-        current_user.user.id,
-        "updated",
-        EntityType::Board.as_str(),
-        board_id,
-        serde_json::json!({ "name": req.name, "description": req.description })
     )
+    .bind(board_id)
+    .bind(current_user.user.id)
+    .bind("updated")
+    .bind(EntityType::Board.as_str())
+    .bind(board_id)
+    .bind(serde_json::json!({ "name": req.name, "description": req.description }))
     .execute(&state.db)
     .await?;
 
@@ -223,7 +224,8 @@ pub async fn delete_board(
     .fetch_one(&state.db)
     .await?;
 
-    sqlx::query!(r#"DELETE FROM boards WHERE id = $1"#, board_id)
+    sqlx::query(r#"DELETE FROM boards WHERE id = $1"#)
+        .bind(board_id)
         .execute(&state.db)
         .await?;
 
@@ -240,16 +242,16 @@ pub async fn verify_board_access(
     user_id: Uuid,
     board_id: Uuid,
 ) -> AppResult<()> {
-    let result = sqlx::query!(
+    let result = sqlx::query_as::<_, ExistsRow>(
         r#"
         SELECT 1 as exists FROM boards b
         LEFT JOIN board_members bm ON b.id = bm.board_id
         WHERE b.id = $1 AND (b.owner_id = $2 OR bm.user_id = $2)
         LIMIT 1
         "#,
-        board_id,
-        user_id
     )
+    .bind(board_id)
+    .bind(user_id)
     .fetch_optional(&state.db)
     .await?;
 
@@ -265,10 +267,10 @@ pub async fn get_user_board_role(
     user_id: Uuid,
     board_id: Uuid,
 ) -> AppResult<BoardRole> {
-    let board = sqlx::query!(
+    let board = sqlx::query_as::<_, OwnerIdRow>(
         r#"SELECT owner_id FROM boards WHERE id = $1"#,
-        board_id
     )
+    .bind(board_id)
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| AppError::NotFound("Board not found".to_string()))?;
@@ -277,11 +279,11 @@ pub async fn get_user_board_role(
         return Ok(BoardRole::Owner);
     }
 
-    let member = sqlx::query!(
+    let member = sqlx::query_as::<_, RoleRow>(
         r#"SELECT role FROM board_members WHERE board_id = $1 AND user_id = $2"#,
-        board_id,
-        user_id
     )
+    .bind(board_id)
+    .bind(user_id)
     .fetch_optional(&state.db)
     .await?;
 

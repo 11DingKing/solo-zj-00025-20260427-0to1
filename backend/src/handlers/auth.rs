@@ -2,7 +2,7 @@ use crate::auth::{generate_token, hash_password, verify_password};
 use crate::db::AppState;
 use crate::errors::{AppError, AppResult};
 use crate::middleware::auth::CurrentUser;
-use crate::models::{AuthResponse, LoginRequest, RegisterRequest, User, UserResponse};
+use crate::models::{AuthResponse, IdRow, LoginRequest, RegisterRequest, User, UserResponse};
 use axum::{extract::State, Json};
 use std::sync::Arc;
 use validator::Validate;
@@ -13,11 +13,11 @@ pub async fn register(
 ) -> AppResult<Json<AuthResponse>> {
     req.validate()?;
 
-    let existing = sqlx::query!(
+    let existing = sqlx::query_as::<_, IdRow>(
         r#"SELECT id FROM users WHERE username = $1 OR email = $2"#,
-        req.username,
-        req.email
     )
+    .bind(&req.username)
+    .bind(&req.email)
     .fetch_optional(&state.db)
     .await?;
 

@@ -4,7 +4,7 @@ use crate::errors::{AppError, AppResult};
 use crate::handlers::boards::{verify_board_access, verify_board_permission};
 use crate::handlers::cards::get_card_board_id;
 use crate::middleware::auth::CurrentUser;
-use crate::models::{CreateTagRequest, EntityType, Tag, UpdateTagRequest};
+use crate::models::{BoardIdNameRow, BoardIdRow, IdNameBoardIdRow, IdRow, NameRow, TitleRow, CreateTagRequest, EntityType, Tag, UpdateTagRequest};
 use axum::{
     extract::{Path, State},
     Json,
@@ -15,6 +15,15 @@ use validator::Validate;
 
 fn tags_cache_key(board_id: Uuid) -> String {
     format!("board:{}:tags", board_id)
+}
+
+fn validate_color(color: &str) -> Result<(), AppError> {
+    let re = regex::Regex::new(r"^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$").unwrap();
+    if re.is_match(color) {
+        Ok(())
+    } else {
+        Err(AppError::BadRequest(format!("Invalid color format: {}", color)))
+    }
 }
 
 pub async fn list_tags(
@@ -55,6 +64,7 @@ pub async fn create_tag(
     Json(req): Json<CreateTagRequest>,
 ) -> AppResult<Json<Tag>> {
     req.validate()?;
+    validate_color(&req.color)?;
     verify_board_permission(&state, current_user.user.id, board_id, |r| r.can_edit_board()).await?;
 
     let tag = sqlx::query_as::<_, Tag>(
@@ -70,18 +80,18 @@ pub async fn create_tag(
     .fetch_one(&state.db)
     .await?;
 
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO activities (board_id, user_id, action, entity_type, entity_id, details)
         VALUES ($1, $2, $3, $4, $5, $6)
         "#,
-        board_id,
-        current_user.user.id,
-        "created",
-        EntityType::Tag.as_str(),
-        tag.id,
-        serde_json::json!({ "name": tag.name, "color": tag.color })
     )
+    .bind(board_id)
+    .bind(current_user.user.id)
+    .bind("created")
+    .bind(EntityType::Tag.as_str())
+    .bind(tag.id)
+    .bind(serde_json::json!({ "name": tag.name, "color": tag.color }))
     .execute(&state.db)
     .await?;
 
@@ -99,10 +109,14 @@ pub async fn update_tag(
 ) -> AppResult<Json<Tag>> {
     req.validate()?;
 
-    let tag = sqlx::query!(
+    if let Some(ref color) = req.color {
+        validate_color(color)?;
+    }
+
+    let tag = sqlx::query_as::<_, BoardIdRow>(
         r#"SELECT board_id FROM tags WHERE id = $1"#,
-        tag_id
     )
+    .bind(tag_id)
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| AppError::NotFound("Tag not found".to_string()))?;
@@ -125,18 +139,18 @@ pub async fn update_tag(
     .fetch_one(&state.db)
     .await?;
 
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO activities (board_id, user_id, action, entity_type, entity_id, details)
         VALUES ($1, $2, $3, $4, $5, $6)
         "#,
-        tag.board_id,
-        current_user.user.id,
-        "updated",
-        EntityType::Tag.as_str(),
-        tag.id,
-        serde_json::json!({ "name": req.name, "color": req.color })
     )
+    .bind(tag.board_id)
+    .bind(current_user.user.id)
+    .bind("updated")
+    .bind(EntityType::Tag.as_str())
+    .bind(tag.id)
+    .bind(serde_json::json!({ "name": req.name, "color": req.color }))
     .execute(&state.db)
     .await?;
 
@@ -151,32 +165,33 @@ pub async fn delete_tag(
     current_user: CurrentUser,
     Path(tag_id): Path<Uuid>,
 ) -> AppResult<Json<serde_json::Value>> {
-    let tag = sqlx::query!(
+    let tag = sqlx::query_as::<_, BoardIdNameRow>(
         r#"SELECT board_id, name FROM tags WHERE id = $1"#,
-        tag_id
     )
+    .bind(tag_id)
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| AppError::NotFound("Tag not found".to_string()))?;
 
     verify_board_permission(&state, current_user.user.id, tag.board_id, |r| r.can_edit_board()).await?;
 
-    sqlx::query!(r#"DELETE FROM tags WHERE id = $1"#, tag_id)
+    sqlx::query(r#"DELETE FROM tags WHERE id = $1"#)
+        .bind(tag_id)
         .execute(&state.db)
         .await?;
 
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO activities (board_id, user_id, action, entity_type, entity_id, details)
         VALUES ($1, $2, $3, $4, $5, $6)
         "#,
-        tag.board_id,
-        current_user.user.id,
-        "deleted",
-        EntityType::Tag.as_str(),
-        tag_id,
-        serde_json::json!({ "name": tag.name })
     )
+    .bind(tag.board_id)
+    .bind(current_user.user.id)
+    .bind("deleted")
+    .bind(EntityType::Tag.as_str())
+    .bind(tag_id)
+    .bind(serde_json::json!({ "name": tag.name }))
     .execute(&state.db)
     .await?;
 
@@ -194,10 +209,10 @@ pub async fn add_tag_to_card(
     let board_id = get_card_board_id(&state, card_id).await?;
     verify_board_permission(&state, current_user.user.id, board_id, |r| r.can_edit_cards()).await?;
 
-    let tag = sqlx::query!(
+    let tag = sqlx::query_as::<_, IdNameBoardIdRow>(
         r#"SELECT id, name, board_id FROM tags WHERE id = $1"#,
-        tag_id
     )
+    .bind(tag_id)
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| AppError::NotFound("Tag not found".to_string()))?;
@@ -206,11 +221,11 @@ pub async fn add_tag_to_card(
         return Err(AppError::BadRequest("Tag does not belong to this board".to_string()));
     }
 
-    let existing = sqlx::query!(
+    let existing = sqlx::query_as::<_, IdRow>(
         r#"SELECT id FROM card_tags WHERE card_id = $1 AND tag_id = $2"#,
-        card_id,
-        tag_id
     )
+    .bind(card_id)
+    .bind(tag_id)
     .fetch_optional(&state.db)
     .await?;
 
@@ -218,36 +233,36 @@ pub async fn add_tag_to_card(
         return Ok(Json(serde_json::json!({ "message": "Tag already added" })));
     }
 
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO card_tags (card_id, tag_id)
         VALUES ($1, $2)
         "#,
-        card_id,
-        tag_id
     )
+    .bind(card_id)
+    .bind(tag_id)
     .execute(&state.db)
     .await?;
 
-    let card = sqlx::query!(
+    let card = sqlx::query_as::<_, TitleRow>(
         r#"SELECT title FROM cards WHERE id = $1"#,
-        card_id
     )
+    .bind(card_id)
     .fetch_optional(&state.db)
     .await?;
 
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO activities (board_id, user_id, action, entity_type, entity_id, details)
         VALUES ($1, $2, $3, $4, $5, $6)
         "#,
-        board_id,
-        current_user.user.id,
-        "tag_added",
-        EntityType::Card.as_str(),
-        card_id,
-        serde_json::json!({ "card_title": card.map(|c| c.title), "tag_name": tag.name })
     )
+    .bind(board_id)
+    .bind(current_user.user.id)
+    .bind("tag_added")
+    .bind(EntityType::Card.as_str())
+    .bind(card_id)
+    .bind(serde_json::json!({ "card_title": card.map(|c| c.title), "tag_name": tag.name }))
     .execute(&state.db)
     .await?;
 
@@ -262,18 +277,18 @@ pub async fn remove_tag_from_card(
     let board_id = get_card_board_id(&state, card_id).await?;
     verify_board_permission(&state, current_user.user.id, board_id, |r| r.can_edit_cards()).await?;
 
-    let tag = sqlx::query!(
+    let tag = sqlx::query_as::<_, NameRow>(
         r#"SELECT name FROM tags WHERE id = $1"#,
-        tag_id
     )
+    .bind(tag_id)
     .fetch_optional(&state.db)
     .await?;
 
-    let result = sqlx::query!(
+    let result = sqlx::query(
         r#"DELETE FROM card_tags WHERE card_id = $1 AND tag_id = $2"#,
-        card_id,
-        tag_id
     )
+    .bind(card_id)
+    .bind(tag_id)
     .execute(&state.db)
     .await?;
 
@@ -281,25 +296,25 @@ pub async fn remove_tag_from_card(
         return Err(AppError::NotFound("Tag not found on card".to_string()));
     }
 
-    let card = sqlx::query!(
+    let card = sqlx::query_as::<_, TitleRow>(
         r#"SELECT title FROM cards WHERE id = $1"#,
-        card_id
     )
+    .bind(card_id)
     .fetch_optional(&state.db)
     .await?;
 
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO activities (board_id, user_id, action, entity_type, entity_id, details)
         VALUES ($1, $2, $3, $4, $5, $6)
         "#,
-        board_id,
-        current_user.user.id,
-        "tag_removed",
-        EntityType::Card.as_str(),
-        card_id,
-        serde_json::json!({ "card_title": card.map(|c| c.title), "tag_name": tag.map(|t| t.name) })
     )
+    .bind(board_id)
+    .bind(current_user.user.id)
+    .bind("tag_removed")
+    .bind(EntityType::Card.as_str())
+    .bind(card_id)
+    .bind(serde_json::json!({ "card_title": card.map(|c| c.title), "tag_name": tag.map(|t| t.name) }))
     .execute(&state.db)
     .await?;
 

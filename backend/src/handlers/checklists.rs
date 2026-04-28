@@ -4,7 +4,8 @@ use crate::handlers::boards::{verify_board_access, verify_board_permission};
 use crate::handlers::cards::get_card_board_id;
 use crate::middleware::auth::CurrentUser;
 use crate::models::{
-    Checklist, ChecklistItem, CreateChecklistItemRequest, CreateChecklistRequest, EntityType,
+    BoardIdRow, Checklist, ChecklistCardIdTitleRow, ChecklistItemStateRow, MaxPositionRow, TitleRow,
+    ChecklistItem, CreateChecklistItemRequest, CreateChecklistRequest, EntityType,
     UpdateChecklistItemRequest, UpdateChecklistRequest,
 };
 use axum::{
@@ -16,7 +17,7 @@ use uuid::Uuid;
 use validator::Validate;
 
 async fn get_checklist_board_id(state: &Arc<AppState>, checklist_id: Uuid) -> AppResult<Uuid> {
-    let result = sqlx::query!(
+    let result = sqlx::query_as::<_, BoardIdRow>(
         r#"
         SELECT c.board_id 
         FROM checklists cl
@@ -24,8 +25,8 @@ async fn get_checklist_board_id(state: &Arc<AppState>, checklist_id: Uuid) -> Ap
         JOIN columns c ON ca.column_id = c.id
         WHERE cl.id = $1
         "#,
-        checklist_id
     )
+    .bind(checklist_id)
     .fetch_optional(&state.db)
     .await?;
 
@@ -36,7 +37,7 @@ async fn get_checklist_board_id(state: &Arc<AppState>, checklist_id: Uuid) -> Ap
 }
 
 async fn get_checklist_item_board_id(state: &Arc<AppState>, item_id: Uuid) -> AppResult<Uuid> {
-    let result = sqlx::query!(
+    let result = sqlx::query_as::<_, BoardIdRow>(
         r#"
         SELECT c.board_id 
         FROM checklist_items ci
@@ -45,8 +46,8 @@ async fn get_checklist_item_board_id(state: &Arc<AppState>, item_id: Uuid) -> Ap
         JOIN columns c ON ca.column_id = c.id
         WHERE ci.id = $1
         "#,
-        item_id
     )
+    .bind(item_id)
     .fetch_optional(&state.db)
     .await?;
 
@@ -67,10 +68,10 @@ pub async fn create_checklist(
     let board_id = get_card_board_id(&state, card_id).await?;
     verify_board_permission(&state, current_user.user.id, board_id, |r| r.can_edit_cards()).await?;
 
-    let max_position = sqlx::query!(
+    let max_position = sqlx::query_as::<_, MaxPositionRow>(
         r#"SELECT MAX(position) as max_pos FROM checklists WHERE card_id = $1"#,
-        card_id
     )
+    .bind(card_id)
     .fetch_one(&state.db)
     .await?;
 
@@ -89,25 +90,25 @@ pub async fn create_checklist(
     .fetch_one(&state.db)
     .await?;
 
-    let card = sqlx::query!(
+    let card = sqlx::query_as::<_, TitleRow>(
         r#"SELECT title FROM cards WHERE id = $1"#,
-        card_id
     )
+    .bind(card_id)
     .fetch_optional(&state.db)
     .await?;
 
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO activities (board_id, user_id, action, entity_type, entity_id, details)
         VALUES ($1, $2, $3, $4, $5, $6)
         "#,
-        board_id,
-        current_user.user.id,
-        "checklist_created",
-        EntityType::Card.as_str(),
-        card_id,
-        serde_json::json!({ "card_title": card.map(|c| c.title), "checklist_title": checklist.title })
     )
+    .bind(board_id)
+    .bind(current_user.user.id)
+    .bind("checklist_created")
+    .bind(EntityType::Card.as_str())
+    .bind(card_id)
+    .bind(serde_json::json!({ "card_title": card.map(|c| c.title), "checklist_title": checklist.title }))
     .execute(&state.db)
     .await?;
 
@@ -149,37 +150,38 @@ pub async fn delete_checklist(
     let board_id = get_checklist_board_id(&state, checklist_id).await?;
     verify_board_permission(&state, current_user.user.id, board_id, |r| r.can_edit_cards()).await?;
 
-    let checklist = sqlx::query!(
+    let checklist = sqlx::query_as::<_, ChecklistCardIdTitleRow>(
         r#"SELECT card_id, title FROM checklists WHERE id = $1"#,
-        checklist_id
     )
+    .bind(checklist_id)
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| AppError::NotFound("Checklist not found".to_string()))?;
 
-    sqlx::query!(r#"DELETE FROM checklists WHERE id = $1"#, checklist_id)
+    sqlx::query(r#"DELETE FROM checklists WHERE id = $1"#)
+        .bind(checklist_id)
         .execute(&state.db)
         .await?;
 
-    let card = sqlx::query!(
+    let card = sqlx::query_as::<_, TitleRow>(
         r#"SELECT title FROM cards WHERE id = $1"#,
-        checklist.card_id
     )
+    .bind(checklist.card_id)
     .fetch_optional(&state.db)
     .await?;
 
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO activities (board_id, user_id, action, entity_type, entity_id, details)
         VALUES ($1, $2, $3, $4, $5, $6)
         "#,
-        board_id,
-        current_user.user.id,
-        "checklist_deleted",
-        EntityType::Card.as_str(),
-        checklist.card_id,
-        serde_json::json!({ "card_title": card.map(|c| c.title), "checklist_title": checklist.title })
     )
+    .bind(board_id)
+    .bind(current_user.user.id)
+    .bind("checklist_deleted")
+    .bind(EntityType::Card.as_str())
+    .bind(checklist.card_id)
+    .bind(serde_json::json!({ "card_title": card.map(|c| c.title), "checklist_title": checklist.title }))
     .execute(&state.db)
     .await?;
 
@@ -197,10 +199,10 @@ pub async fn create_item(
     let board_id = get_checklist_board_id(&state, checklist_id).await?;
     verify_board_permission(&state, current_user.user.id, board_id, |r| r.can_edit_cards()).await?;
 
-    let max_position = sqlx::query!(
+    let max_position = sqlx::query_as::<_, MaxPositionRow>(
         r#"SELECT MAX(position) as max_pos FROM checklist_items WHERE checklist_id = $1"#,
-        checklist_id
     )
+    .bind(checklist_id)
     .fetch_one(&state.db)
     .await?;
 
@@ -257,7 +259,8 @@ pub async fn delete_item(
     let board_id = get_checklist_item_board_id(&state, item_id).await?;
     verify_board_permission(&state, current_user.user.id, board_id, |r| r.can_edit_cards()).await?;
 
-    sqlx::query!(r#"DELETE FROM checklist_items WHERE id = $1"#, item_id)
+    sqlx::query(r#"DELETE FROM checklist_items WHERE id = $1"#)
+        .bind(item_id)
         .execute(&state.db)
         .await?;
 
@@ -272,10 +275,10 @@ pub async fn toggle_item(
     let board_id = get_checklist_item_board_id(&state, item_id).await?;
     verify_board_permission(&state, current_user.user.id, board_id, |r| r.can_edit_cards()).await?;
 
-    let current = sqlx::query!(
+    let current = sqlx::query_as::<_, ChecklistItemStateRow>(
         r#"SELECT is_completed, checklist_id, content FROM checklist_items WHERE id = $1"#,
-        item_id
     )
+    .bind(item_id)
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| AppError::NotFound("Checklist item not found".to_string()))?;
@@ -295,37 +298,37 @@ pub async fn toggle_item(
     .fetch_one(&state.db)
     .await?;
 
-    let checklist = sqlx::query!(
+    let checklist = sqlx::query_as::<_, ChecklistCardIdTitleRow>(
         r#"SELECT card_id, title FROM checklists WHERE id = $1"#,
-        current.checklist_id
     )
+    .bind(current.checklist_id)
     .fetch_optional(&state.db)
     .await?;
 
     if let Some(cl) = checklist {
-        let card = sqlx::query!(
+        let card = sqlx::query_as::<_, TitleRow>(
             r#"SELECT title FROM cards WHERE id = $1"#,
-            cl.card_id
         )
+        .bind(cl.card_id)
         .fetch_optional(&state.db)
         .await?;
 
-        sqlx::query!(
+        sqlx::query(
             r#"
             INSERT INTO activities (board_id, user_id, action, entity_type, entity_id, details)
             VALUES ($1, $2, $3, $4, $5, $6)
             "#,
-            board_id,
-            current_user.user.id,
-            if new_completed { "checklist_item_completed" } else { "checklist_item_uncompleted" },
-            EntityType::Card.as_str(),
-            cl.card_id,
-            serde_json::json!({ 
-                "card_title": card.map(|c| c.title), 
-                "checklist_title": cl.title,
-                "item_content": current.content
-            })
         )
+        .bind(board_id)
+        .bind(current_user.user.id)
+        .bind(if new_completed { "checklist_item_completed" } else { "checklist_item_uncompleted" })
+        .bind(EntityType::Card.as_str())
+        .bind(cl.card_id)
+        .bind(serde_json::json!({ 
+            "card_title": card.map(|c| c.title), 
+            "checklist_title": cl.title,
+            "item_content": current.content
+        }))
         .execute(&state.db)
         .await?;
     }
