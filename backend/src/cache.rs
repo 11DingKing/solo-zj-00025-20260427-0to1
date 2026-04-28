@@ -1,4 +1,4 @@
-use redis::{Client, ConnectionManager};
+use redis::{Client, aio::ConnectionManager};
 use serde::{de::DeserializeOwned, Serialize};
 use std::time::Duration;
 

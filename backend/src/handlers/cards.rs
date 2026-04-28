@@ -51,7 +51,7 @@ pub async fn list_cards(
     Ok(Json(cards))
 }
 
-async fn get_column_board_id(state: &Arc<AppState>, column_id: Uuid) -> AppResult<Uuid> {
+pub async fn get_column_board_id(state: &Arc<AppState>, column_id: Uuid) -> AppResult<Uuid> {
     let result = sqlx::query!(
         r#"SELECT board_id FROM columns WHERE id = $1"#,
         column_id
@@ -65,7 +65,7 @@ async fn get_column_board_id(state: &Arc<AppState>, column_id: Uuid) -> AppResul
     }
 }
 
-async fn get_card_board_id(state: &Arc<AppState>, card_id: Uuid) -> AppResult<Uuid> {
+pub async fn get_card_board_id(state: &Arc<AppState>, card_id: Uuid) -> AppResult<Uuid> {
     let result = sqlx::query!(
         r#"
         SELECT c.board_id 

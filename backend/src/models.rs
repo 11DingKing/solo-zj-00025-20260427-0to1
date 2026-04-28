@@ -4,7 +4,7 @@ use uuid::Uuid;
 use validator::Validate;
 
 // 用户相关
-#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct User {
     pub id: Uuid,
     pub username: String,
@@ -37,7 +37,7 @@ pub struct AuthResponse {
     pub user: UserResponse,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct UserResponse {
     pub id: Uuid,
     pub username: String,
@@ -140,7 +140,7 @@ pub struct UpdateMemberRoleRequest {
     pub role: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct BoardMemberWithUser {
     pub id: Uuid,
     pub board_id: Uuid,

@@ -1,25 +1,17 @@
 # 构建阶段
-FROM --platform=$BUILDPLATFORM rust:1.85-alpine as builder
+FROM --platform=$BUILDPLATFORM rust:1.88-alpine as builder
 
 WORKDIR /app
 
 # 安装构建依赖
 RUN apk add --no-cache musl-dev openssl-dev
 
-# 先创建一个空项目来缓存依赖
-RUN cargo init --name kanban-backend
-
-# 复制 Cargo.toml
+# 复制所有源代码
 COPY Cargo.toml ./
-
-# 编译依赖（这一步会被缓存）
-RUN cargo build --release 2>&1 || true
-
-# 复制源代码
 COPY src ./src
 COPY migrations ./migrations
 
-# 正式编译
+# 直接编译
 RUN cargo build --release
 
 # 运行阶段

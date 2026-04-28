@@ -62,9 +62,8 @@ async fn main() -> anyhow::Result<()> {
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], 8080));
     tracing::info!("listening on {}", addr);
     
-    axum::Server::bind(&addr)
-        .serve(app.into_make_service())
-        .await?;
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
+    axum::serve(listener, app).await?;
 
     Ok(())
 }

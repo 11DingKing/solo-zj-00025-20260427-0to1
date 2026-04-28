@@ -20,7 +20,6 @@ pub struct CurrentUser {
 impl<S> FromRequestParts<S> for CurrentUser
 where
     S: Send + Sync,
-    AppState: std::ops::Deref<Target = AppState>,
 {
     type Rejection = AppError;
 

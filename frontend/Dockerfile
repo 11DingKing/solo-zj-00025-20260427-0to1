@@ -3,6 +3,12 @@ FROM --platform=$BUILDPLATFORM node:20-alpine as builder
 
 WORKDIR /app
 
+# 设置 npm 镜像源和超时时间
+RUN npm config set registry https://registry.npmmirror.com
+RUN npm config set fetch-retries 5
+RUN npm config set fetch-retry-mintimeout 20000
+RUN npm config set fetch-retry-maxtimeout 120000
+
 # 复制依赖文件
 COPY package*.json ./
 
