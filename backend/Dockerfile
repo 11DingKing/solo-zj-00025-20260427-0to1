@@ -9,8 +9,8 @@ RUN apk add --no-cache musl-dev openssl-dev
 # 先创建一个空项目来缓存依赖
 RUN cargo init --name kanban-backend
 
-# 复制 Cargo.toml 和 Cargo.lock
-COPY Cargo.toml Cargo.lock ./
+# 复制 Cargo.toml
+COPY Cargo.toml ./
 
 # 编译依赖（这一步会被缓存）
 RUN cargo build --release 2>&1 || true
